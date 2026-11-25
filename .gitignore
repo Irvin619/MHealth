@@ -1,0 +1,20 @@
+# Laravel environment and generated dependencies
+MBackend/backend/.env
+MBackend/backend/.env.*
+!MBackend/backend/.env.example
+MBackend/backend/vendor/
+MBackend/backend/node_modules/
+MBackend/backend/public/build/
+
+# Flutter and Dart generated files
+MFrontend/.dart_tool/
+MFrontend/build/
+MFrontend/.flutter-plugins
+MFrontend/.flutter-plugins-dependencies
+MFrontend/.packages
+
+# Local editor and OS files
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
