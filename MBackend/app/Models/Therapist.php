@@ -31,4 +31,9 @@ class Therapist extends Model
     {
         return $this->hasMany(ClinicalSummary::class, 'therapist_id', 'therapist_id');
     }
+
+    public function patients(): HasMany
+    {
+        return $this->hasMany(Client::class, 'therapist_id', 'therapist_id');
+    }
 }

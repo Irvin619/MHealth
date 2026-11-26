@@ -13,14 +13,6 @@ class EmotionMapScreen extends StatefulWidget {
 }
 
 class _EmotionMapScreenState extends State<EmotionMapScreen> {
-  static const _colors = <Color>[
-    Color(0xFF287C70),
-    Color(0xFFE2A644),
-    Color(0xFFDF7665),
-    Color(0xFF5279A5),
-    Color(0xFF9A6B83),
-    Color(0xFF8A9B61),
-  ];
   static const _emotions = <String>[
     'calm',
     'hopeful',
@@ -33,10 +25,21 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
     'overwhelmed',
     'numb',
   ];
+  static const _emotionColors = <String, Color>{
+    'calm': Color(0xFF287C70),
+    'hopeful': Color(0xFFE2A644),
+    'connected': Color(0xFF5C9B72),
+    'focused': Color(0xFF5279A5),
+    'grateful': Color(0xFF8A9B61),
+    'anxious': Color(0xFFE27A3F),
+    'sad': Color(0xFF5279A5),
+    'angry': Color(0xFFDF554F),
+    'overwhelmed': Color(0xFF9A6B83),
+    'numb': Color(0xFF89939A),
+  };
 
   final _disclosure = TextEditingController();
   final Set<String> _selected = {};
-  Color _color = _colors.first;
   double _valence = 6;
   double _intensity = 4;
   String _category = 'daily check-in';
@@ -73,15 +76,22 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
       });
       return;
     }
+    if (_disclosure.text.trim().isEmpty) {
+      setState(() {
+        _error = 'Add context before saving your check-in.';
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
       _result = null;
     });
     try {
+      final color = _selectedEmotionColor;
       final result = await widget.service.submitEmotionMap(
         colorHex:
-            '#${_color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+            '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
         valenceScore: _valence.round(),
         intensityLevel: _intensity.round(),
         emotionNodes: _selected.toList(),
@@ -178,16 +188,28 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
             ),
           ),
         const SizedBox(height: 22),
-        _sectionTitle('Choose a color'),
-        const SizedBox(height: 10),
+        _sectionTitle('What emotions are present?'),
+        const SizedBox(height: 8),
         Wrap(
-          spacing: 12,
+          spacing: 8,
+          runSpacing: 4,
           children: [
-            for (final color in _colors)
-              _ColorSwatch(
-                color: color,
-                selected: color == _color,
-                onTap: () => setState(() => _color = color),
+            for (final emotion in _emotions)
+              FilterChip(
+                label: Text(emotion),
+                selected: _selected.contains(emotion),
+                selectedColor: _emotionColors[emotion],
+                checkmarkColor: _emotionTextColor(_emotionColors[emotion]!),
+                labelStyle: TextStyle(
+                  color: _selected.contains(emotion)
+                      ? _emotionTextColor(_emotionColors[emotion]!)
+                      : null,
+                ),
+                onSelected: (selected) => setState(
+                  () => selected
+                      ? _selected.add(emotion)
+                      : _selected.remove(emotion),
+                ),
               ),
           ],
         ),
@@ -207,26 +229,7 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
           highLabel: 'Strong',
         ),
         const SizedBox(height: 10),
-        _sectionTitle('What emotions are present?'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            for (final emotion in _emotions)
-              FilterChip(
-                label: Text(emotion),
-                selected: _selected.contains(emotion),
-                onSelected: (selected) => setState(
-                  () => selected
-                      ? _selected.add(emotion)
-                      : _selected.remove(emotion),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _sectionTitle('Add context (optional)'),
+        _sectionTitle('Add context'),
         const SizedBox(height: 8),
         TextFormField(
           initialValue: _category,
@@ -238,7 +241,8 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
           controller: _disclosure,
           maxLines: 3,
           decoration: const InputDecoration(
-            labelText: 'Anything you want to share?',
+            labelText: 'What is contributing to these emotions?',
+            helperText: 'Required',
             alignLabelWithHint: true,
           ),
         ),
@@ -332,42 +336,26 @@ class _EmotionMapScreenState extends State<EmotionMapScreen> {
     final parsed = int.tryParse(value.substring(1), radix: 16);
     return parsed == null ? null : Color(0xFF000000 | parsed);
   }
-}
 
-class _ColorSwatch extends StatelessWidget {
-  const _ColorSwatch({
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
+  Color get _selectedEmotionColor {
+    var red = 0;
+    var green = 0;
+    var blue = 0;
+    for (final emotion in _selected) {
+      final color = _emotionColors[emotion]!.toARGB32();
+      red += (color >> 16) & 0xFF;
+      green += (color >> 8) & 0xFF;
+      blue += color & 0xFF;
+    }
+    final count = _selected.length;
+    return Color.fromARGB(
+      255,
+      (red / count).round(),
+      (green / count).round(),
+      (blue / count).round(),
+    );
+  }
 
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: 'Color ${color.toARGB32().toRadixString(16)}',
-    selected: selected,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? Colors.black : Colors.black26,
-            width: selected ? 3 : 1,
-          ),
-        ),
-        child: selected
-            ? const Icon(Icons.check, color: Colors.white, size: 20)
-            : null,
-      ),
-    ),
-  );
+  Color _emotionTextColor(Color background) =>
+      background.computeLuminance() > 0.42 ? Colors.black87 : Colors.white;
 }

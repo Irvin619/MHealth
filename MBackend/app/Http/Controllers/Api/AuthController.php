@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\MentalHealthSpecialization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -20,10 +22,15 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', Password::defaults(), 'confirmed'],
-            'role' => ['required', 'in:client,therapist'],
+            'role' => ['required', 'in:patient,therapist'],
             'anonymous_alias' => ['sometimes', 'nullable', 'string', 'max:255', 'unique:clients,anonymous_alias'],
-            'license_number' => ['required_if:role,therapist', 'prohibited_if:role,client', 'string', 'max:255', 'unique:therapists,license_number'],
-            'specialization' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'license_number' => ['required_if:role,therapist', 'prohibited_if:role,patient', 'string', 'max:255', 'unique:therapists,license_number'],
+            'specialization' => [
+                'required_if:role,therapist',
+                'nullable',
+                'string',
+                Rule::in(MentalHealthSpecialization::OPTIONS),
+            ],
         ]);
 
         $user = DB::transaction(function () use ($validated): User {
@@ -34,9 +41,13 @@ class AuthController extends Controller
                 'role' => $validated['role'],
             ]);
 
-            if ($user->role === 'client') {
+            if ($user->role === 'patient') {
+                $anonymousAlias = trim((string) ($validated['anonymous_alias'] ?? ''));
                 $user->client()->create([
-                    'anonymous_alias' => $validated['anonymous_alias'] ?? 'client-'.Str::lower(Str::random(10)),
+                    'anonymous_alias' => $anonymousAlias !== ''
+                        ? $anonymousAlias
+                        : 'patient-'.Str::lower(Str::random(10)),
+                    'has_custom_alias' => $anonymousAlias !== '',
                 ]);
             } else {
                 $user->therapist()->create([
@@ -49,9 +60,13 @@ class AuthController extends Controller
         });
 
         $token = $user->createToken('flutter')->plainTextToken;
+        $user->load(['client.therapist.user', 'therapist']);
+        if ($user->role === 'patient') {
+            $user->makeHidden('user_code');
+        }
 
         return response()->json([
-            'user' => $user->load(['client', 'therapist']),
+            'user' => $user,
             'token' => $token,
             'token_type' => 'Bearer',
         ], 201);
@@ -70,10 +85,42 @@ class AuthController extends Controller
             throw ValidationException::withMessages(['email' => ['The provided credentials are incorrect.']]);
         }
 
+        $user->load(['client.therapist.user', 'therapist']);
+        if ($user->role === 'patient') {
+            $user->makeHidden('user_code');
+        }
+
         return response()->json([
-            'user' => $user->load(['client', 'therapist']),
+            'user' => $user,
             'token' => $user->createToken('flutter')->plainTextToken,
             'token_type' => 'Bearer',
+        ]);
+    }
+
+    public function profile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $client = $user->client;
+        $accountDetails = $user->role === 'patient'
+            ? [
+                'anonymous_alias' => $client?->has_custom_alias
+                    ? $client->anonymous_alias
+                    : null,
+                'specialization' => $client?->specialization,
+            ]
+            : [
+                'license_number' => $user->therapist?->license_number,
+                'specialization' => $user->therapist?->specialization,
+            ];
+
+        return response()->json([
+            'profile' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'user_code' => $user->user_code,
+                ...$accountDetails,
+            ],
         ]);
     }
 

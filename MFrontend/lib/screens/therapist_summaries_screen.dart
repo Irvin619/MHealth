@@ -43,19 +43,54 @@ class _TherapistSummariesScreenState extends State<TherapistSummariesScreen> {
     }
   }
 
-  String _formatSummary(String? text) {
-    if (text == null || text.isEmpty) return 'No summary details.';
+  Widget _summaryDetails(String? text) {
+    if (text == null || text.isEmpty) {
+      return const Text('No summary details.');
+    }
     try {
       final decoded = jsonDecode(text);
       if (decoded is Map<String, dynamic>) {
-        return decoded.entries
-            .map((entry) => '${entry.key}: ${entry.value}')
-            .join('\n');
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in decoded.entries)
+              if (entry.key.toLowerCase() == 'color')
+                _EmotionalColor(value: entry.value?.toString())
+              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text('${entry.key}: ${_formatValue(entry.value)}'),
+                ),
+          ],
+        );
       }
     } on FormatException {
-      return text;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in text.split('\n'))
+            if (RegExp(r'^\s*Color:', caseSensitive: false).hasMatch(line))
+              _EmotionalColor(
+                value: RegExp(
+                  r'^\s*Color:\s*(.*)$',
+                  caseSensitive: false,
+                ).firstMatch(line)?.group(1),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(line),
+              ),
+        ],
+      );
     }
-    return text;
+    return Text(text);
+  }
+
+  String _formatValue(Object? value) {
+    if (value == null) return 'Not provided';
+    if (value is List) return value.join(', ');
+    return value.toString();
   }
 
   @override
@@ -122,7 +157,7 @@ class _TherapistSummariesScreenState extends State<TherapistSummariesScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(_formatSummary(summary['summary_text']?.toString())),
+                  _summaryDetails(summary['summary_text']?.toString()),
                   const SizedBox(height: 8),
                   Text(
                     'Generated ${summary['generated_at'] ?? ''}',
@@ -144,20 +179,103 @@ class _RiskLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final high = status.toLowerCase() == 'high';
+    final normalizedStatus = status.toLowerCase();
+    final high = normalizedStatus == 'high';
+    final moderate = normalizedStatus == 'moderate';
+    final background = high
+        ? const Color(0xFFFFE7E1)
+        : moderate
+        ? const Color(0xFFFFF1D8)
+        : const Color(0xFFE1F1EC);
+    final foreground = high
+        ? const Color(0xFF9B3028)
+        : moderate
+        ? const Color(0xFF8A5A13)
+        : const Color(0xFF28695D);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: high ? const Color(0xFFFFE7E1) : const Color(0xFFE1F1EC),
-        borderRadius: BorderRadius.circular(4),
+        color: background,
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         status,
-        style: TextStyle(
-          color: high ? const Color(0xFF9B3028) : const Color(0xFF28695D),
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(color: foreground, fontWeight: FontWeight.w600),
       ),
     );
+  }
+}
+
+class _EmotionalColor extends StatelessWidget {
+  const _EmotionalColor({required this.value});
+
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _parseColor(value);
+    final label = color == null ? 'Not available' : _colorName(color);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          if (color != null) ...[
+            Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0x33000000)),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Text('Emotional color: $label'),
+        ],
+      ),
+    );
+  }
+
+  Color? _parseColor(String? value) {
+    if (value == null || !RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value)) {
+      return null;
+    }
+    final parsed = int.tryParse(value.substring(1), radix: 16);
+    return parsed == null ? null : Color(0xFF000000 | parsed);
+  }
+
+  String _colorName(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    if (hsl.saturation < 0.12) {
+      if (hsl.lightness > 0.75) return 'light gray';
+      if (hsl.lightness < 0.3) return 'charcoal';
+      return 'soft gray';
+    }
+
+    final hue = hsl.hue;
+    final hueName = hue < 15 || hue >= 345
+        ? 'rose'
+        : hue < 45
+        ? 'amber'
+        : hue < 70
+        ? 'gold'
+        : hue < 155
+        ? 'green'
+        : hue < 195
+        ? 'teal'
+        : hue < 250
+        ? 'blue'
+        : hue < 290
+        ? 'violet'
+        : 'plum';
+    final tone = hsl.lightness < 0.28
+        ? 'deep'
+        : hsl.lightness > 0.76
+        ? 'pale'
+        : hsl.saturation < 0.45
+        ? 'muted'
+        : 'vivid';
+    return '$tone $hueName';
   }
 }

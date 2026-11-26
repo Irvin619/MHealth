@@ -6,13 +6,16 @@ class MessageService {
   final ApiClient _api;
 
   Future<Map<String, dynamic>> sendMessage({
-    required String receiverId,
+    required String receiverCode,
     required String body,
   }) => _api.post(
     '/messages',
-    body: {'receiver_id': int.tryParse(receiverId) ?? receiverId, 'body': body},
+    body: {'receiver_code': receiverCode, 'body': body},
   );
 
-  Future<Map<String, dynamic>> fetchThread(String userId) =>
-      _api.get('/messages/${Uri.encodeComponent(userId)}');
+  Future<Map<String, dynamic>> fetchThread(String userCode) =>
+      _api.get('/messages/${Uri.encodeComponent(userCode)}');
+
+  Future<Map<String, dynamic>> fetchAssignedPatients() =>
+      _api.get('/therapist/patients');
 }

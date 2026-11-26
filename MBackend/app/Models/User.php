@@ -18,6 +18,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'user_code',
     ];
 
     protected $hidden = [
@@ -30,6 +31,21 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            if ($user->user_code !== null) {
+                return;
+            }
+
+            do {
+                $code = (string) random_int(10000, 99999);
+            } while (static::where('user_code', $code)->exists());
+
+            $user->user_code = $code;
+        });
     }
 
     public function client(): HasOne

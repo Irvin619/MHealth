@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../specializations.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
@@ -28,7 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _specialization = TextEditingController();
   bool _isRegistering = false;
   bool _busy = false;
-  String _role = 'client';
+  String _role = 'patient';
   String? _error;
 
   @override
@@ -51,7 +53,7 @@ class _AuthScreenState extends State<AuthScreen> {
     });
     try {
       if (_isRegistering) {
-        await widget.authService.register(
+        final response = await widget.authService.register(
           name: _name.text.trim(),
           email: _email.text.trim(),
           password: _password.text,
@@ -61,6 +63,19 @@ class _AuthScreenState extends State<AuthScreen> {
           licenseNumber: _license.text.trim(),
           specialization: _specialization.text,
         );
+        if (_role == 'therapist') {
+          final user = response['user'];
+          final userCode = user is Map ? user['user_code']?.toString() : null;
+          if (userCode == null || !RegExp(r'^[0-9]{5}$').hasMatch(userCode)) {
+            throw const ApiException(
+              'The server did not return a valid five-digit account code.',
+              200,
+            );
+          }
+          if (!mounted) return;
+          await _showAccountCode(userCode);
+          if (!mounted) return;
+        }
       } else {
         await widget.authService.login(
           email: _email.text.trim(),
@@ -82,6 +97,55 @@ class _AuthScreenState extends State<AuthScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _showAccountCode(String code) async {
+    final accountType = _role == 'patient' ? 'Patient' : 'Therapist';
+    final messenger = ScaffoldMessenger.of(context);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Account created'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Your $accountType code is:'),
+            const SizedBox(height: 12),
+            Center(
+              child: SelectableText(
+                code,
+                style: Theme.of(context).textTheme.headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 4),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Save this code and share it with your care-team contact. '
+              'Enter their code on the Messages page to open the conversation.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: code));
+              if (!mounted) return;
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Code copied to clipboard.')),
+              );
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copy code'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
   }
 
   String? _required(String? value, String label) =>
@@ -183,8 +247,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         items: const [
                           DropdownMenuItem(
-                            value: 'client',
-                            child: Text('Client'),
+                            value: 'patient',
+                            child: Text('Patient'),
                           ),
                           DropdownMenuItem(
                             value: 'therapist',
@@ -192,10 +256,10 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ],
                         onChanged: (value) =>
-                            setState(() => _role = value ?? 'client'),
+                            setState(() => _role = value ?? 'patient'),
                       ),
                       const SizedBox(height: 12),
-                      if (_role == 'client')
+                      if (_role == 'patient')
                         TextFormField(
                           controller: _alias,
                           decoration: const InputDecoration(
@@ -212,11 +276,30 @@ class _AuthScreenState extends State<AuthScreen> {
                               _required(value, 'License number'),
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _specialization,
+                        DropdownButtonFormField<String>(
+                          initialValue: _specialization.text.isEmpty
+                              ? null
+                              : _specialization.text,
+                          isExpanded: true,
                           decoration: const InputDecoration(
-                            labelText: 'Specialization (optional)',
+                            labelText: 'Specialization',
                           ),
+                          items: [
+                            for (final specialization
+                                in mentalHealthSpecializations)
+                              DropdownMenuItem(
+                                value: specialization,
+                                child: Text(
+                                  specialization,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          validator: (value) =>
+                              value == null ? 'Select a specialization.' : null,
+                          onChanged: (value) =>
+                              _specialization.text = value ?? '',
                         ),
                       ],
                     ],

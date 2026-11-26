@@ -16,7 +16,7 @@ class EmotionMapController extends Controller
         $client = $request->user()->client;
 
         if (! $client) {
-            return response()->json(['message' => 'Only client accounts can submit emotion maps.'], 403);
+            return response()->json(['message' => 'Only patient accounts can submit emotion maps.'], 403);
         }
 
         $validated = $request->validate([
@@ -25,9 +25,9 @@ class EmotionMapController extends Controller
             'intensity_level' => ['required', 'integer', 'between:0,10'],
             'emotion_nodes' => ['required', 'array'],
             'emotion_nodes.*' => ['string', 'max:255'],
-            'prompt' => ['sometimes', 'array'],
-            'prompt.prompt_category' => ['required_with:prompt', 'string', 'max:255'],
-            'prompt.disclosure_text' => ['nullable', 'string', 'max:10000'],
+            'prompt' => ['required', 'array'],
+            'prompt.prompt_category' => ['required', 'string', 'max:255'],
+            'prompt.disclosure_text' => ['required', 'string', 'max:10000'],
         ]);
 
         [$emotionMap, $prompt, $result] = DB::transaction(function () use ($client, $validated, $triage): array {
@@ -38,9 +38,7 @@ class EmotionMapController extends Controller
                 'emotion_nodes' => $validated['emotion_nodes'],
             ]);
 
-            $prompt = isset($validated['prompt'])
-                ? $client->narrativePrompts()->create($validated['prompt'])
-                : null;
+            $prompt = $client->narrativePrompts()->create($validated['prompt']);
 
             return [$emotionMap, $prompt, $triage->triage($emotionMap, $prompt)];
         });
@@ -66,7 +64,7 @@ class EmotionMapController extends Controller
         $client = $request->user()->client;
 
         if (! $client) {
-            return response()->json(['message' => 'Only client accounts can view emotion map history.'], 403);
+            return response()->json(['message' => 'Only patient accounts can view emotion map history.'], 403);
         }
 
         $maps = EmotionMap::where('client_id', $client->client_id)

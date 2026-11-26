@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import 'screens/auth_screen.dart';
 import 'screens/emotion_map_screen.dart';
 import 'screens/messages_screen.dart';
+import 'screens/patient_specialization_screen.dart';
+import 'screens/profile_screen.dart';
 import 'screens/therapist_summaries_screen.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
@@ -30,7 +32,8 @@ class _MHealthAppState extends State<MHealthApp> {
   late final SummaryService _summaries;
   bool _checkingSession = true;
   bool _authenticated = false;
-  String _role = 'client';
+  bool _needsSpecialization = false;
+  String _role = 'patient';
 
   @override
   void initState() {
@@ -46,27 +49,40 @@ class _MHealthAppState extends State<MHealthApp> {
   Future<void> _restoreSession() async {
     final token = await _auth.token();
     final role = await _auth.role();
+    final needsSpecialization = token != null && token.isNotEmpty
+        ? await _auth.needsSpecialization()
+        : false;
     if (!mounted) return;
     setState(() {
       _authenticated = token != null && token.isNotEmpty;
-      _role = role ?? 'client';
+      _needsSpecialization = needsSpecialization;
+      _role = role ?? 'patient';
       _checkingSession = false;
     });
   }
 
   Future<void> _onAuthenticated() async {
     final role = await _auth.role();
+    final needsSpecialization = await _auth.needsSpecialization();
     if (!mounted) return;
     setState(() {
       _authenticated = true;
-      _role = role ?? 'client';
+      _needsSpecialization = needsSpecialization;
+      _role = role ?? 'patient';
     });
+  }
+
+  void _onSpecializationAssigned() {
+    setState(() => _needsSpecialization = false);
   }
 
   Future<void> _logout() async {
     await _auth.logout();
     if (!mounted) return;
-    setState(() => _authenticated = false);
+    setState(() {
+      _authenticated = false;
+      _needsSpecialization = false;
+    });
   }
 
   @override
@@ -75,36 +91,87 @@ class _MHealthAppState extends State<MHealthApp> {
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF287C70),
-        surface: const Color(0xFFF8FAF8),
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF8FAF8),
+      colorScheme:
+          ColorScheme.fromSeed(
+            seedColor: const Color(0xFF287C70),
+            surface: const Color(0xFFF5F8F6),
+          ).copyWith(
+            secondary: const Color(0xFFC17A52),
+            onSecondary: Colors.white,
+            secondaryContainer: const Color(0xFFF6E5DA),
+            onSecondaryContainer: const Color(0xFF51301F),
+            tertiary: const Color(0xFF846C91),
+            onTertiary: Colors.white,
+            tertiaryContainer: const Color(0xFFEDE3F1),
+            onTertiaryContainer: const Color(0xFF392A42),
+          ),
+      scaffoldBackgroundColor: const Color(0xFFF5F8F6),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFF8FAF8),
+        backgroundColor: Color(0xFFF5F8F6),
+        foregroundColor: Color(0xFF20332F),
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      cardTheme: CardThemeData(
+        color: Colors.white,
+        elevation: 1,
+        shadowColor: const Color(0x1A20332F),
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xFFE2EBE7)),
+        ),
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        backgroundColor: Color(0xFFF5F8F6),
+        indicatorColor: Color(0xFFD7EEE8),
+      ),
+      navigationBarTheme: const NavigationBarThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: Color(0xFFD7EEE8),
+        elevation: 0,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFD8E0DC)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFD8E0DC)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFF287C70), width: 1.5),
         ),
       ),
     ),
     home: _checkingSession
         ? const _StartupScreen()
         : _authenticated
-        ? _Workspace(
-            role: _role,
-            authService: _auth,
-            emotionMaps: _emotionMaps,
-            messages: _messages,
-            summaries: _summaries,
-            onLogout: _logout,
-          )
+        ? _needsSpecialization
+              ? PatientSpecializationScreen(
+                  authService: _auth,
+                  onAssigned: _onSpecializationAssigned,
+                )
+              : _Workspace(
+                  role: _role,
+                  authService: _auth,
+                  emotionMaps: _emotionMaps,
+                  messages: _messages,
+                  summaries: _summaries,
+                  onLogout: _logout,
+                )
         : AuthScreen(authService: _auth, onAuthenticated: _onAuthenticated),
   );
 }
@@ -140,17 +207,19 @@ class _Workspace extends StatefulWidget {
 
 class _WorkspaceState extends State<_Workspace> {
   int _index = 0;
+  bool _showProfile = false;
 
   List<_TabItem> get _tabs => [
-    _TabItem(
-      'Check-in',
-      Icons.spa_outlined,
-      EmotionMapScreen(service: widget.emotionMaps),
-    ),
+    if (widget.role == 'patient')
+      _TabItem(
+        'Check-in',
+        Icons.spa_outlined,
+        EmotionMapScreen(service: widget.emotionMaps),
+      ),
     _TabItem(
       'Messages',
       Icons.chat_bubble_outline,
-      MessagesScreen(service: widget.messages),
+      MessagesScreen(service: widget.messages, role: widget.role),
     ),
     if (widget.role == 'therapist')
       _TabItem(
@@ -162,6 +231,14 @@ class _WorkspaceState extends State<_Workspace> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showProfile) {
+      return ProfileScreen(
+        authService: widget.authService,
+        onBack: () => setState(() => _showProfile = false),
+        onLogout: widget.onLogout,
+      );
+    }
+
     final tabs = _tabs;
     if (_index >= tabs.length) _index = 0;
     return LayoutBuilder(
@@ -175,9 +252,9 @@ class _WorkspaceState extends State<_Workspace> {
             ),
             actions: [
               IconButton(
-                onPressed: widget.onLogout,
-                tooltip: 'Sign out',
-                icon: const Icon(Icons.logout),
+                onPressed: () => setState(() => _showProfile = true),
+                tooltip: 'Profile',
+                icon: const Icon(Icons.account_circle_outlined),
               ),
               const SizedBox(width: 8),
             ],
